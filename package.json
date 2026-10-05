@@ -1,6 +1,7 @@
 {
-  "name": "demetub",
+  "name": "demetub-api",
   "version": "1.0.0",
+  "type": "commonjs",
   "dependencies": {
     "youtube-dl-exec": "^3.0.0"
   }
