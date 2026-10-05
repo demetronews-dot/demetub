@@ -3,7 +3,6 @@ const fs = require('fs');
 const path = require('path');
 
 module.exports = async function handler(req, res) {
-  // CORS headers - definidos ANTES de qualquer resposta
   const corsHeaders = {
     'Access-Control-Allow-Origin': 'https://demetub.blogspot.com',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
@@ -11,13 +10,11 @@ module.exports = async function handler(req, res) {
     'Access-Control-Max-Age': '86400'
   };
 
-  // Responde ao preflight OPTIONS (obrigatório para CORS)
   if (req.method === 'OPTIONS') {
     res.writeHead(204, corsHeaders);
     return res.end();
   }
 
-  // Verifica método
   if (req.method !== 'POST') {
     res.writeHead(405, corsHeaders);
     return res.end(JSON.stringify({ error: 'Método não permitido' }));
@@ -64,19 +61,16 @@ module.exports = async function handler(req, res) {
       options.format = 'bestaudio/best';
     } else {
       const height = quality.replace('p', '');
-      options.format = `bestvideo[height<=${height}]+bestaudio/best[height<=${height}]/best`;
+      options.format = `best[height<=${height}][ext=mp4]/best[height<=${height}]/best`;
     }
 
     const output = await youtubedl(url, options);
 
     let downloadUrl = output.url;
-    if (!downloadUrl && output.requested_downloads && output.requested_downloads.length > 0) {
-      downloadUrl = output.requested_downloads[0].url;
-    }
     if (!downloadUrl && output.formats && output.formats.length > 0) {
       const best = output.formats
-        .filter(f => f.url && (f.vcodec !== 'none' || f.acodec !== 'none'))
-        .pop();
+        .filter(f => f.url && f.ext === 'mp4' && f.acodec !== 'none' && f.vcodec !== 'none')
+        .pop() || output.formats.filter(f => f.url).pop();
       if (best) downloadUrl = best.url;
     }
 
@@ -100,7 +94,7 @@ module.exports = async function handler(req, res) {
 
     if (errStr.includes('Sign in to confirm')) {
       errorMessage = 'O YouTube bloqueou a requisição. Cookies ou proxy precisam ser configurados.';
-    } else if (errStr.includes('not found')) {
+    } else if (errStr.includes('not found') || errStr.includes('command not found')) {
       errorMessage = 'Ferramenta de download não instalada no servidor.';
     }
 
