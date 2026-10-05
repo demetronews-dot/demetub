@@ -1,51 +1,122 @@
 module.exports = async function handler(req, res) {
-  // Configuração de CORS para o Blogger
   res.setHeader('Access-Control-Allow-Origin', 'https://demetub.blogspot.com');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
   if (req.method === 'OPTIONS') return res.status(200).end();
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Método não permitido' });
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Metodo nao permitido' });
 
-  const { url, format } = req.body || {};
+  const { url, format, quality } = req.body || {};
   if (!url) return res.status(400).json({ error: 'URL ausente' });
 
+  const rapidApiKey = process.env.RAPIDAPI_KEY;
+  const rapidApiHost = 'youtube-media-downloader.p.rapidapi.com';
+
+  if (!rapidApiKey) {
+    return res.status(500).json({ error: 'API key nao configurada.' });
+  }
+
   try {
-    const rapidApiHost = process.env.RAPIDAPI_HOST;
-    const rapidApiKey = process.env.RAPIDAPI_KEY;
-
-    if (!rapidApiHost || !rapidApiKey) {
-      return res.status(500).json({ error: 'Credenciais da RapidAPI não configuradas.' });
+    const match = url.match(/(?:v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+    if (!match) {
+      return res.status(400).json({ error: 'Video ID invalido.' });
     }
+    const videoId = match[1];
 
-    // Chama a API da RapidAPI (exemplo para a API YouTube MP3)
-    const apiResponse = await fetch(`https://${rapidApiHost}/dl?id=${encodeURIComponent(url)}`, {
+    const apiUrl = 'https://' + rapidApiHost + '/v2/video/details' +
+      '?audios=auto&videos=auto&urlAccess=normal&subtitles=false&related=false' +
+      '&videoId=' + videoId;
+
+    const apiResponse = await fetch(apiUrl, {
       method: 'GET',
       headers: {
-        'X-RapidAPI-Key': rapidApiKey,
-        'X-RapidAPI-Host': rapidApiHost
+        'x-rapidapi-host': rapidApiHost,
+        'x-rapidapi-key': rapidApiKey
       }
     });
 
     const apiData = await apiResponse.json();
 
-    if (!apiResponse.ok || apiData.status !== 'ok') {
-      // Se a API devolver um erro, repassa a mensagem
-      return res.status(apiResponse.status).json({ 
-        error: apiData.msg || apiData.message || 'Falha na API de download.' 
+    if (apiData.errorId !== 'Success') {
+      return res.status(500).json({
+        error: apiData.errorId || 'Erro na API'
       });
     }
 
-    // A API geralmente devolve um link direto para o ficheiro
+    let downloadUrl = null;
+    let selectedInfo = null;
+
+    if (format === 'mp3') {
+      // ÁUDIO: pegar primeiro item de audios
+      if (apiData.audios && apiData.audios.items && apiData.audios.items.length > 0) {
+        const audio = apiData.audios.items[0];
+        downloadUrl = audio.url;
+        selectedInfo = { ext: audio.extension, size: audio.sizeText };
+      }
+    } else {
+      // VÍDEO: pegar o video com qualidade desejada
+      if (apiData.videos && apiData.videos.items && apiData.videos.items.length > 0) {
+        const videos = apiData.videos.items;
+        const targetQuality = (quality || '720p').replace('p', '');
+
+        // Estrategia:
+        // 1. Procurar video com hasAudio:true na qualidade pedida (preferido para 360p/720p)
+        // 2. Se nao encontrar, procurar qualquer video com hasAudio:true (ex: 360p)
+        // 3. Se ainda nao, usar video de qualidade pedida (sem audio)
+        // 4. Fallback: primeiro video
+
+        let selected = videos.find(v =>
+          v.hasAudio === true &&
+          v.quality &&
+          v.quality === quality
+        );
+
+        if (!selected) {
+          selected = videos.find(v =>
+            v.hasAudio === true &&
+            v.extension === 'mp4'
+          );
+        }
+
+        if (!selected) {
+          selected = videos.find(v =>
+            v.quality === quality &&
+            v.extension === 'mp4'
+          );
+        }
+
+        if (!selected) {
+          selected = videos.find(v => v.extension === 'mp4');
+        }
+
+        if (!selected) {
+          selected = videos[0];
+        }
+
+        downloadUrl = selected.url;
+        selectedInfo = {
+          quality: selected.quality,
+          ext: selected.extension,
+          hasAudio: selected.hasAudio,
+          size: selected.sizeText
+        };
+      }
+    }
+
+    if (!downloadUrl) {
+      return res.status(500).json({ error: 'Nenhum formato disponivel.' });
+    }
+
     return res.status(200).json({
-      download_url: apiData.link, // O campo pode variar (link, url, download_url)
-      title: 'Download via RapidAPI', // A API pode não devolver o título
-      duration: null,
-      uploader: null
+      download_url: downloadUrl,
+      title: apiData.title || 'Video',
+      duration: apiData.lengthSeconds || null,
+      uploader: apiData.channel ? apiData.channel.name : null,
+      info: selectedInfo
     });
 
   } catch (err) {
-    console.error('Erro no proxy RapidAPI:', err);
-    return res.status(500).json({ error: 'Erro interno ao contactar o serviço de download.' });
+    console.error('Erro:', err);
+    return res.status(500).json({ error: 'Erro interno: ' + err.message });
   }
 };
