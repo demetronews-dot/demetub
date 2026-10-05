@@ -22,11 +22,15 @@ module.exports = async function handler(req, res) {
   }
 
   try {
+    const path = require('path');
+    const binPath = path.join(process.cwd(), 'node_modules', 'youtube-dl-exec', 'bin', 'yt-dlp');
+
     const opts = {
       dumpSingleJson: true,
       noWarnings: true,
       noCheckCertificates: true,
-      preferFreeFormats: true
+      preferFreeFormats: true,
+      binaryPath: binPath
     };
 
     if (process.env.YT_DLP_PROXY) {
@@ -64,6 +68,6 @@ module.exports = async function handler(req, res) {
     if (msg.indexOf('Sign in to confirm') !== -1) {
       return res.status(500).json({ error: 'YouTube bloqueou. Cookies ou proxy precisam ser configurados.' });
     }
-    return res.status(500).json({ error: 'Falha ao processar: ' + msg.slice(0, 200) });
+    return res.status(500).json({ error: 'Falha: ' + msg.slice(0, 300) });
   }
 };
