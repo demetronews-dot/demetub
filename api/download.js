@@ -3,28 +3,34 @@ const fs = require('fs');
 const path = require('path');
 
 module.exports = async function handler(req, res) {
-  // CORS para o Blogger
-  res.setHeader('Access-Control-Allow-Origin', 'https://demetub.blogspot.com');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  // CORS headers - definidos ANTES de qualquer resposta
+  const corsHeaders = {
+    'Access-Control-Allow-Origin': 'https://demetub.blogspot.com',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Max-Age': '86400'
+  };
 
-  // Responde ao preflight do navegador
+  // Responde ao preflight OPTIONS (obrigatório para CORS)
   if (req.method === 'OPTIONS') {
-    return res.status(200).end();
+    res.writeHead(204, corsHeaders);
+    return res.end();
   }
 
+  // Verifica método
   if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Método não permitido' });
+    res.writeHead(405, corsHeaders);
+    return res.end(JSON.stringify({ error: 'Método não permitido' }));
   }
 
   const { url, format, quality } = req.body || {};
 
   if (!url || !format || !quality) {
-    return res.status(400).json({ error: 'Parâmetros ausentes: url, format, quality.' });
+    res.writeHead(400, corsHeaders);
+    return res.end(JSON.stringify({ error: 'Parâmetros ausentes: url, format, quality.' }));
   }
 
   try {
-    // Opções base do yt-dlp
     const options = {
       dumpSingleJson: true,
       noCheckCertificates: true,
@@ -33,7 +39,6 @@ module.exports = async function handler(req, res) {
       addHeader: ['referer:youtube.com', 'user-agent:googlebot']
     };
 
-    // Configura os cookies (se existirem)
     if (process.env.YOUTUBE_COOKIES) {
       const cookiePath = path.join('/tmp', 'cookies.txt');
       const cookieLines = ['# Netscape HTTP Cookie File', ''];
@@ -51,12 +56,10 @@ module.exports = async function handler(req, res) {
       options.cookies = cookiePath;
     }
 
-    // Configura o proxy (se existir)
     if (process.env.YT_DLP_PROXY) {
       options.proxy = process.env.YT_DLP_PROXY;
     }
 
-    // Define o formato
     if (format === 'mp3') {
       options.format = 'bestaudio/best';
     } else {
@@ -64,16 +67,12 @@ module.exports = async function handler(req, res) {
       options.format = `bestvideo[height<=${height}]+bestaudio/best[height<=${height}]/best`;
     }
 
-    // Executa o yt-dlp
     const output = await youtubedl(url, options);
 
-    // Extrai a URL de download
     let downloadUrl = output.url;
-
     if (!downloadUrl && output.requested_downloads && output.requested_downloads.length > 0) {
       downloadUrl = output.requested_downloads[0].url;
     }
-
     if (!downloadUrl && output.formats && output.formats.length > 0) {
       const best = output.formats
         .filter(f => f.url && (f.vcodec !== 'none' || f.acodec !== 'none'))
@@ -85,27 +84,27 @@ module.exports = async function handler(req, res) {
       throw new Error('Não foi possível extrair a URL de download.');
     }
 
-    return res.status(200).json({
+    res.writeHead(200, corsHeaders);
+    return res.end(JSON.stringify({
       download_url: downloadUrl,
       title: output.title || 'Vídeo',
       duration: output.duration || null,
       uploader: output.uploader || null
-    });
+    }));
 
   } catch (error) {
     console.error('Erro no yt-dlp:', error);
 
-    let errorMessage = 'Falha ao processar o vídeo. Tente novamente.';
+    let errorMessage = 'Falha ao processar o vídeo.';
     const errStr = (error.stderr || error.message || '').toString();
 
     if (errStr.includes('Sign in to confirm')) {
       errorMessage = 'O YouTube bloqueou a requisição. Cookies ou proxy precisam ser configurados.';
-    } else if (errStr.includes('not found') || errStr.includes('command not found')) {
+    } else if (errStr.includes('not found')) {
       errorMessage = 'Ferramenta de download não instalada no servidor.';
-    } else if (errStr.includes('ffmpeg')) {
-      errorMessage = 'FFmpeg não disponível. Tente uma qualidade diferente.';
     }
 
-    return res.status(500).json({ error: errorMessage });
+    res.writeHead(500, corsHeaders);
+    return res.end(JSON.stringify({ error: errorMessage }));
   }
 };
