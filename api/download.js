@@ -124,4 +124,4 @@ module.exports = async function handler(req, res) {
     console.error('Erro:', err);
     return res.status(500).json({ error: 'Erro interno: ' + err.message });
   }
-};Corrige urlAccess para proxy e filename
+};
