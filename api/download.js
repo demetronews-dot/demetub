@@ -16,6 +16,15 @@ module.exports = async function handler(req, res) {
     return res.status(500).json({ error: 'API key nao configurada.' });
   }
 
+  // Sanitiza o titulo para usar como nome de ficheiro
+  function sanitizeFilename(name) {
+    return (name || 'video')
+      .replace(/[\\/:*?"<>|]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .substring(0, 100);
+  }
+
   try {
     const match = url.match(/(?:v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
     if (!match) {
@@ -47,23 +56,15 @@ module.exports = async function handler(req, res) {
     let selectedInfo = null;
 
     if (format === 'mp3') {
-      // ÁUDIO: pegar primeiro item de audios
       if (apiData.audios && apiData.audios.items && apiData.audios.items.length > 0) {
         const audio = apiData.audios.items[0];
         downloadUrl = audio.url;
         selectedInfo = { ext: audio.extension, size: audio.sizeText };
       }
     } else {
-      // VÍDEO: pegar o video com qualidade desejada
       if (apiData.videos && apiData.videos.items && apiData.videos.items.length > 0) {
         const videos = apiData.videos.items;
         const targetQuality = (quality || '720p').replace('p', '');
-
-        // Estrategia:
-        // 1. Procurar video com hasAudio:true na qualidade pedida (preferido para 360p/720p)
-        // 2. Se nao encontrar, procurar qualquer video com hasAudio:true (ex: 360p)
-        // 3. Se ainda nao, usar video de qualidade pedida (sem audio)
-        // 4. Fallback: primeiro video
 
         let selected = videos.find(v =>
           v.hasAudio === true &&
@@ -107,9 +108,15 @@ module.exports = async function handler(req, res) {
       return res.status(500).json({ error: 'Nenhum formato disponivel.' });
     }
 
+    // Gera o nome do ficheiro
+    const ext = (format === 'mp3') ? 'mp3' : 'mp4';
+    const safeTitle = sanitizeFilename(apiData.title);
+    const fileName = safeTitle + '.' + ext;
+
     return res.status(200).json({
       download_url: downloadUrl,
       title: apiData.title || 'Video',
+      filename: fileName,
       duration: apiData.lengthSeconds || null,
       uploader: apiData.channel ? apiData.channel.name : null,
       info: selectedInfo
