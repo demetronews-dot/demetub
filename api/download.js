@@ -16,7 +16,6 @@ module.exports = async function handler(req, res) {
     return res.status(500).json({ error: 'API key nao configurada.' });
   }
 
-  // Sanitiza o titulo para usar como nome de ficheiro
   function sanitizeFilename(name) {
     return (name || 'video')
       .replace(/[\\/:*?"<>|]/g, '')
@@ -33,7 +32,7 @@ module.exports = async function handler(req, res) {
     const videoId = match[1];
 
     const apiUrl = 'https://' + rapidApiHost + '/v2/video/details' +
-      '?audios=auto&videos=auto&urlAccess=normal&subtitles=false&related=false' +
+      '?audios=auto&videos=auto&urlAccess=proxy&subtitles=false&related=false' +
       '&videoId=' + videoId;
 
     const apiResponse = await fetch(apiUrl, {
@@ -108,7 +107,6 @@ module.exports = async function handler(req, res) {
       return res.status(500).json({ error: 'Nenhum formato disponivel.' });
     }
 
-    // Gera o nome do ficheiro
     const ext = (format === 'mp3') ? 'mp3' : 'mp4';
     const safeTitle = sanitizeFilename(apiData.title);
     const fileName = safeTitle + '.' + ext;
@@ -126,4 +124,4 @@ module.exports = async function handler(req, res) {
     console.error('Erro:', err);
     return res.status(500).json({ error: 'Erro interno: ' + err.message });
   }
-};
+};Corrige urlAccess para proxy e filename
